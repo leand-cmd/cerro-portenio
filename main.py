@@ -4,7 +4,12 @@ Orquesta el flujo completo: scraping de SofaScore -> limpieza -> inserción en P
 Uso:
     python main.py
 """
+import subprocess
+import sys
 import logging
+
+# Instalar Playwright browsers antes de nada
+subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
 
 import config
 from database.connection import cerrar_conexion, get_connection, inicializar_schema
