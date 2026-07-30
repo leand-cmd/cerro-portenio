@@ -3,11 +3,10 @@ Manejo de la conexión a PostgreSQL usando psycopg2.
 """
 import logging
 from typing import Optional
+import os
 
 import psycopg2
 from psycopg2.extensions import connection as PGConnection
-
-import config
 
 logger = logging.getLogger(__name__)
 
@@ -16,53 +15,57 @@ _connection: Optional[PGConnection] = None
 
 def conectar() -> Optional[PGConnection]:
     """
-    Abre una nueva conexión a PostgreSQL usando las variables de entorno
-    definidas en config.py (leídas desde .env).
-
-    Retorna la conexión o None si falla.
+    Abre una nueva conexión a PostgreSQL.
+    Usa DATABASE_URL (Railway) o variables individuales (.env local).
     """
     try:
-        conn = psycopg2.connect(
-            host=config.DB_HOST,
-            user=config.DB_USER,
-            password=config.DB_PASSWORD,
-            dbname=config.DB_NAME,
-            port=config.DB_PORT,
-        )
-        logger.info("✓ Conexión a PostgreSQL establecida (db=%s, host=%s)", config.DB_NAME, config.DB_HOST)
+        db_url = os.getenv('DATABASE_URL')
+        
+        if db_url:
+            # Railway: usa DATABASE_URL directamente
+            conn = psycopg2.connect(db_url)
+            logger.info("✓ Conectado a PostgreSQL (Railway)")
+        else:
+            # Local: usa variables individuales
+            conn = psycopg2.connect(
+                host=os.getenv('DB_HOST', 'localhost'),
+                user=os.getenv('DB_USER', 'postgres'),
+                password=os.getenv('DB_PASSWORD', ''),
+                dbname=os.getenv('DB_NAME', 'cerro_data'),
+                port=os.getenv('DB_PORT', '5432'),
+            )
+            logger.info("✓ Conectado a PostgreSQL (Local)")
+        
         return conn
     except psycopg2.OperationalError as e:
-        logger.error("❌ Error de conexión a PostgreSQL: %s", e)
+        logger.error("❌ Error de conexión: %s", e)
         return None
     except Exception as e:
-        logger.error("❌ Error inesperado al conectar a PostgreSQL: %s", e)
+        logger.error("❌ Error inesperado: %s", e)
         return None
 
 
 def get_connection() -> PGConnection:
-    """
-    Devuelve una conexión reutilizable (singleton a nivel de módulo).
-    Si la conexión está cerrada o no existe, crea una nueva.
-    """
+    """Devuelve una conexión reutilizable."""
     global _connection
     if _connection is None or _connection.closed:
         _connection = conectar()
         if _connection is None:
-            raise ConnectionError("No se pudo establecer conexión con PostgreSQL")
+            raise ConnectionError("No se pudo conectar a PostgreSQL")
     return _connection
 
 
 def cerrar_conexion() -> None:
-    """Cierra la conexión reutilizable si está abierta."""
+    """Cierra la conexión."""
     global _connection
     if _connection is not None and not _connection.closed:
         _connection.close()
-        logger.info("✓ Conexión a PostgreSQL cerrada")
+        logger.info("✓ Conexión cerrada")
     _connection = None
 
 
 def inicializar_schema(schema_path: str = "database/schema.sql") -> None:
-    """Ejecuta el schema.sql para crear las tablas si no existen."""
+    """Ejecuta el schema.sql."""
     conn = get_connection()
     try:
         with open(schema_path, "r", encoding="utf-8") as f:
@@ -70,8 +73,8 @@ def inicializar_schema(schema_path: str = "database/schema.sql") -> None:
         with conn.cursor() as cur:
             cur.execute(schema_sql)
         conn.commit()
-        logger.info("✓ Schema inicializado correctamente")
+        logger.info("✓ Schema inicializado")
     except Exception as e:
         conn.rollback()
-        logger.error("❌ Error al inicializar el schema: %s", e)
+        logger.error("❌ Error en schema: %s", e)
         raise
